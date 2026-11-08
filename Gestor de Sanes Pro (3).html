@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Gestor de Sanes Pro</title>
+  <meta name="theme-color" content="#10b981">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SanManager">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/color/512/piggy-bank.png">
+
+  <!-- Tailwind CSS, Lucide Icons & Confetti Library -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- PWA Dynamic Manifest -->
+  <script>
+    const manifestData = {
+      "name": "Gestor de Sanes Pro",
+      "short_name": "SanManager",
+      "description": "Administración de Sanes, Tandas y Cundinas con sorteo y control de pagos.",
+      "start_url": "./",
+      "display": "standalone",
+      "background_color": "#0f172a",
+      "theme_color": "#10b981",
+      "icons": [
+        {
+          "src": "https://img.icons8.com/color/512/piggy-bank.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    };
+    const manifestBlob = new Blob([JSON.stringify(manifestData)], {type: 'application/json'});
+    const manifestURL = URL.createObjectURL(manifestBlob);
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = manifestURL;
+    document.head.appendChild(link);
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      touch-action: manipulation;
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between pb-10">
+
+  <!-- Service Worker PWA Embebido -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      const swCode = `
+        const CACHE_NAME = 'san-manager-v3';
+        self.addEventListener('install', (e) => self.skipWaiting());
+        self.addEventListener('activate', (e) => self.clients.claim());
+        self.addEventListener('fetch', (e) => {
+          e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+        });
+      `;
+      const blob = new Blob([swCode], { type: 'application/javascript' });
+      navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(console.error);
+    }
+  </script>
+
+  <!-- Banner Instalación PWA -->
+  <div id="pwa-install-banner" class="hidden bg-emerald-600 text-white px-4 py-2 flex justify-between items-center text-xs font-semibold shadow-lg sticky top-0 z-50">
+    <div class="flex items-center gap-2">
+      <i data-lucide="download-cloud" class="w-4 h-4"></i>
+      <span>Instala la App en tu teléfono para usarla sin conexión</span>
+    </div>
+    <button onclick="installPWA()" class="bg-white text-emerald-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-emerald-50 shadow">
+      Instalar
+    </button>
+  </div>
+
+  <!-- Encabezado Principal -->
+  <header class="glass-card sticky top-0 z-40 border-b border-slate-800/80 px-4 py-3">
+    <div class="max-w-xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black text-xl shadow-lg shadow-emerald-500/20">
+          S
+        </div>
+        <div>
+          <h1 class="text-base font-extrabold tracking-tight leading-none text-white">SanManager <span class="text-xs font-normal text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-800">Pro</span></h1>
+          <p class="text-[11px] text-slate-400 mt-0.5" id="current-san-subtitle">Cargando San...</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="openSanListModal()" title="Mis Sanes" class="p-2 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition">
+          <i data-lucide="layers" class="w-5 h-5"></i>
+        </button>
+        <button onclick="openNewSanModal()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3 py-2 rounded-lg text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/20">
+          <i data-lucide="plus-circle" class="w-4 h-4"></i>
+          Nuevo
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Panel Principal -->
+  <main class="max-w-xl mx-auto w-full px-4 pt-4 flex-1 space-y-4">
+
+    <!-- Tarjeta de Resumen del San Activo -->
+    <section class="glass-card rounded-2xl p-4 shadow-xl border border-slate-800 relative overflow-hidden">
+      <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+      <div class="flex justify-between items-start mb-3">
+        <div>
+          <span class="text-[10px] font-bold tracking-wider text-emerald-400 uppercase bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">San Activo</span>
+          <h2 id="san-name" class="text-xl font-extrabold text-white mt-1">--</h2>
+        </div>
+        <button onclick="confirmDeleteCurrentSan()" title="Eliminar este San" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Métricas Financieras -->
+      <div class="grid grid-cols-3 gap-2 bg-slate-900/60 rounded-xl p-3 border border-slate-800/80">
+        <div class="text-center border-r border-slate-800">
+          <span class="text-[10px] text-slate-400 block font-medium">Cuota</span>
+          <span id="san-quota" class="text-sm font-bold text-slate-100">$0</span>
+        </div>
+        <div class="text-center border-r border-slate-800">
+          <span class="text-[10px] text-slate-400 block font-medium">Pozo Ronda</span>
+          <span id="san-pool" class="text-sm font-extrabold text-emerald-400">$0</span>
+        </div>
+        <div class="text-center">
+          <span class="text-[10px] text-slate-400 block font-medium">Integrantes</span>
+          <span id="san-count" class="text-sm font-bold text-slate-100">0</span>
+        </div>
+      </div>
+
+      <!-- Barra de Progreso General -->
+      <div class="mt-4">
+        <div class="flex justify-between text-xs font-semibold mb-1">
+          <span class="text-slate-400">Progreso General de Cobros</span>
+          <span id="san-progress-text" class="text-emerald-400">0%</span>
+        </div>
+        <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
+          <div id="san-progress-bar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Navegación por Pestañas -->
+    <nav class="flex rounded-xl bg-slate-900 p-1 border border-slate-800">
+      <button id="tab-btn-rounds" onclick="switchTab('rounds')" class="flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-950 bg-emerald-500 shadow">
+        Rondas y Fechas
+      </button>
+      <button id="tab-btn-matrix" onclick="switchTab('matrix')" class="flex-1 py-2 text-xs font-bold text-slate-400 hover:text-slate-200 rounded-lg transition">
+        Matriz de Pagos
+      </button>
+      <button id="tab-btn-raffle" onclick="switchTab('raffle')" class="flex-1 py-2 text-xs font-bold text-slate-400 hover:text-slate-200 rounded-lg transition flex items-center justify-center gap-1">
+        <i data-lucide="dices" class="w-3.5 h-3.5 text-amber-400"></i>
+        Sorteo
+      </button>
+    </nav>
+
+    <!-- TAB 1: RONDAS Y CRONOGRAMA -->
+    <section id="tab-rounds" class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cronograma de Rondas</h3>
+        <span class="text-[11px] text-slate-500" id="total-rounds-count">0 Rondas</span>
+      </div>
+      <div id="rounds-list" class="space-y-2.5 custom-scrollbar max-h-[500px] overflow-y-auto pr-1"></div>
+    </section>
+
+    <!-- TAB 2: MATRIZ DE CONTROL DE PAGOS -->
+    <section id="tab-matrix" class="hidden space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Control de Ronda Seleccionada</h3>
+        <select id="matrix-round-select" onchange="renderMatrixTab()" class="bg-slate-900 border border-slate-700 text-xs rounded-lg px-2.5 py-1.5 text-white font-semibold"></select>
+      </div>
+
+      <div class="glass-card rounded-2xl p-4 border border-slate-800 space-y-3">
+        <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+          <div>
+            <span class="text-[10px] text-slate-400 uppercase font-semibold">Beneficiario de Ronda</span>
+            <div id="matrix-recipient-name" class="text-sm font-extrabold text-emerald-400">--</div>
+          </div>
+          <div class="text-right">
+            <span class="text-[10px] text-slate-400 uppercase font-semibold">Estado Recolección</span>
+            <div id="matrix-round-status" class="text-xs font-bold text-amber-400">0/0 Pagados</div>
+          </div>
+        </div>
+
+        <div id="matrix-participants-list" class="space-y-2"></div>
+      </div>
+    </section>
+
+    <!-- TAB 3: SORTEO DE TURNOS -->
+    <section id="tab-raffle" class="hidden space-y-3">
+      <div class="glass-card rounded-2xl p-5 border border-slate-800 text-center relative overflow-hidden">
+        <div class="w-12 h-12 bg-amber-500/10 text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-amber-500/20">
+          <i data-lucide="trophy" class="w-6 h-6"></i>
+        </div>
+        <h3 class="text-base font-extrabold text-white">Sorteo Transparente de Puestos</h3>
+        <p class="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+          El <strong class="text-amber-400">Turno #1 está reservado automáticamente para el Organizador</strong>. Haz clic para aleatorizar los turnos del 2 en adelante.
+        </p>
+
+        <button id="btn-run-raffle" onclick="runRaffleAnimation()" class="mt-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black px-6 py-3 rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 mx-auto">
+          <i data-lucide="sparkles" class="w-4 h-4"></i>
+          Iniciar Sorteo (Puestos 2+)
+        </button>
+      </div>
+
+      <div class="glass-card rounded-2xl p-4 border border-slate-800 space-y-2">
+        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Asignación Actual de Turnos</h4>
+        <div id="raffle-turn-list" class="space-y-2"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL 1: CREAR NUEVO SAN -->
+  <div id="modal-new-san" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl p-5 border border-slate-800 shadow-2xl relative">
+      <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+        <h3 class="text-base font-extrabold text-white flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-400"></i>
+          Crear Nuevo San
+        </h3>
+        <button onclick="closeNewSanModal()" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="form-create-san" onsubmit="handleCreateSan(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">Nombre del San</label>
+          <input type="text" id="input-san-name" required placeholder="Ej. San de Motos SBR" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">Cuota por Persona ($)</label>
+            <input type="number" id="input-san-quota" required min="1" step="0.5" placeholder="30" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">Frecuencia</label>
+            <select id="input-san-frequency" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+              <option value="weekly">Semanal</option>
+              <option value="biweekly">Quincenal</option>
+              <option value="monthly">Mensual</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">Total Integrantes</label>
+            <input type="number" id="input-san-total-members" required min="2" max="50" value="10" onchange="renderMemberInputs(this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1">Fecha Primer Pago</label>
+            <input type="date" id="input-san-start-date" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div class="border-t border-slate-800 pt-3">
+          <label class="block text-xs font-bold text-slate-300 mb-1">Nombre del Organizador (Turno #1 Reservado)</label>
+          <input type="text" id="input-organizer-name" required value="Organizador (Yo)" class="w-full bg-slate-900 border border-emerald-500/50 rounded-xl px-3 py-2 text-xs text-emerald-300 font-semibold focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1">Lista de Demás Integrantes (Turnos 2+)</label>
+          <div id="members-inputs-container" class="space-y-1.5 max-h-36 overflow-y-auto pr-1 custom-scrollbar"></div>
+        </div>
+
+        <button type="submit" class="w-full mt-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20">
+          Guardar y Generar San
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL 2: GESTIÓN DE SANES -->
+  <div id="modal-san-list" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl p-5 border border-slate-800 shadow-2xl">
+      <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+        <h3 class="text-base font-extrabold text-white flex items-center gap-2">
+          <i data-lucide="layers" class="w-5 h-5 text-emerald-400"></i>
+          Mis Sanes Registrados
+        </h3>
+        <button onclick="closeSanListModal()" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div id="san-management-list" class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar"></div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: CONFIRMAR ELIMINACIÓN -->
+  <div id="modal-delete-confirm" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-sm rounded-2xl p-5 border border-rose-500/30 text-center shadow-2xl">
+      <div class="w-12 h-12 bg-rose-500/10 text-rose-400 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-rose-500/20">
+        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+      </div>
+      <h3 class="text-base font-extrabold text-white">¿Eliminar este San?</h3>
+      <p class="text-xs text-slate-400 mt-1">
+        Se eliminará permanentemente el grupo <strong id="delete-san-target-name" class="text-slate-200">--</strong> y todo su historial de pagos.
+      </p>
+
+      <div class="flex gap-2 mt-5">
+        <button onclick="closeDeleteModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2 rounded-xl text-xs transition">
+          Cancelar
+        </button>
+        <button id="btn-confirm-delete" onclick="executeSanDeletion()" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-extrabold py-2 rounded-xl text-xs transition shadow-lg shadow-rose-600/20">
+          Sí, Eliminar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LÓGICA DE LA APLICACIÓN -->
+  <script>
+    const STORAGE_KEY = 'san_manager_pro_app_data';
+    let appState = { activeSanId: null, sanes: [] };
+    let sanIdToDelete = null;
+
+    const SAMPLE_SAN = {
+      id: 'san_demo_001',
+      name: 'San de Motos SBR',
+      quota: 30,
+      frequency: 'weekly',
+      startDate: new Date().toISOString().split('T')[0],
+      organizerName: 'Danny Briceño (Organizador)',
+      members: [
+        'Danny Briceño (Organizador)', 'Carlos Pérez', 'María Rodríguez',
+        'José Gómez', 'Ana Martínez', 'Luis Hernández', 'Elena Torres',
+        'Gabriel Silva', 'Sofia Vargas', 'Marcos López'
+      ],
+      turns: [
+        { turn: 1, name: 'Danny Briceño (Organizador)', isOrganizer: true },
+        { turn: 2, name: 'Carlos Pérez', isOrganizer: false },
+        { turn: 3, name: 'María Rodríguez', isOrganizer: false },
+        { turn: 4, name: 'José Gómez', isOrganizer: false },
+        { turn: 5, name: 'Ana Martínez', isOrganizer: false },
+        { turn: 6, name: 'Luis Hernández', isOrganizer: false },
+        { turn: 7, name: 'Elena Torres', isOrganizer: false },
+        { turn: 8, name: 'Gabriel Silva', isOrganizer: false },
+        { turn: 9, name: 'Sofia Vargas', isOrganizer: false },
+        { turn: 10, name: 'Marcos López', isOrganizer: false }
+      ],
+      rounds: [],
+      payments: {}
+    };
+
+    function calculateDueDate(startDateStr, index, frequency) {
+      const date = new Date(startDateStr);
+      if (frequency === 'weekly') date.setDate(date.getDate() + (index * 7));
+      else if (frequency === 'biweekly') date.setDate(date.getDate() + (index * 14));
+      else if (frequency === 'monthly') date.setMonth(date.getMonth() + index);
+      return date.toISOString().split('T')[0];
+    }
+
+    function initSanRounds(san) {
+      san.rounds = san.turns.map((t, idx) => ({
+        roundNumber: idx + 1,
+        recipient: t.name,
+        isOrganizer: t.isOrganizer || false,
+        dueDate: calculateDueDate(san.startDate, idx, san.frequency)
+      }));
+
+      if (!san.payments) san.payments = {};
+      san.rounds.forEach(r => {
+        if (!san.payments[r.roundNumber]) {
+          san.payments[r.roundNumber] = {};
+          san.members.forEach(m => {
+            san.payments[r.roundNumber][m] = { paid: false, method: 'Efectivo USD', ref: '' };
+          });
+        }
+      });
+    }
+
+    function loadAppState() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try { appState = JSON.parse(saved); } catch (e) {}
+      }
+      if (!appState.sanes || appState.sanes.length === 0) {
+        initSanRounds(SAMPLE_SAN);
+        appState.sanes = [SAMPLE_SAN];
+        appState.activeSanId = SAMPLE_SAN.id;
+        saveAppState();
+      }
+      if (!appState.activeSanId && appState.sanes.length > 0) {
+        appState.activeSanId = appState.sanes[0].id;
+      }
+    }
+
+    function saveAppState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      renderApp();
+    }
+
+    function getActiveSan() {
+      return appState.sanes.find(s => s.id === appState.activeSanId);
+    }
+
+    function renderApp() {
+      const activeSan = getActiveSan();
+      if (!activeSan) {
+        document.getElementById('san-name').innerText = "Sin San Activo";
+        document.getElementById('current-san-subtitle').innerText = "Crea un San para comenzar";
+        return;
+      }
+
+      document.getElementById('san-name').innerText = activeSan.name;
+      document.getElementById('current-san-subtitle').innerText = `${activeSan.members.length} Integrantes • ${activeSan.frequency.toUpperCase()}`;
+      document.getElementById('san-quota').innerText = `$${activeSan.quota}`;
+      document.getElementById('san-pool').innerText = `$${activeSan.quota * activeSan.members.length}`;
+      document.getElementById('san-count').innerText = activeSan.members.length;
+
+      let totalExpected = activeSan.rounds.length * activeSan.members.length;
+      let totalVerified = 0;
+      activeSan.rounds.forEach(r => {
+        const roundPays = activeSan.payments[r.roundNumber] || {};
+        Object.values(roundPays).forEach(p => { if (p.paid) totalVerified++; });
+      });
+
+      const percent = totalExpected > 0 ? Math.round((totalVerified / totalExpected) * 100) : 0;
+      document.getElementById('san-progress-text').innerText = `${percent}%`;
+      document.getElementById('san-progress-bar').style.width = `${percent}%`;
+
+      renderRoundsTab(activeSan);
+      renderMatrixTab();
+      renderRaffleTab(activeSan);
+      lucide.createIcons();
+    }
+
+    function renderRoundsTab(san) {
+      const container = document.getElementById('rounds-list');
+      document.getElementById('total-rounds-count').innerText = `${san.rounds.length} Rondas Total`;
+
+      container.innerHTML = san.rounds.map(r => {
+        const roundPays = san.payments[r.roundNumber] || {};
+        const paidCount = Object.values(roundPays).filter(p => p.paid).length;
+        const isComplete = paidCount === san.members.length;
+        const totalPool = san.quota * san.members.length;
+
+        return `
+          <div class="glass-card rounded-xl p-3 border ${isComplete ? 'border-emerald-500/40 bg-emerald-950/10' : 'border-slate-800'} flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl ${isComplete ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'} flex items-center justify-center font-extrabold text-xs">
+                #${r.roundNumber}
+              </div>
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-white">${r.recipient}</span>
+                  ${r.isOrganizer ? '<span class="text-[9px] font-bold text-amber-400 bg-amber-950/80 border border-amber-800/60 px-1.5 rounded">Org #1</span>' : ''}
+                </div>
+                <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                  <span><i data-lucide="calendar" class="w-3 h-3 inline text-emerald-400"></i> ${r.dueDate}</span>
+                  <span>•</span>
+                  <span class="text-emerald-400 font-semibold">$${totalPool}</span>
+                </div>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${isComplete ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}">
+                ${isComplete ? 'Completado' : `${paidCount}/${san.members.length} Pagos`}
+              </span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderMatrixTab() {
+      const san = getActiveSan();
+      if (!san) return;
+
+      const select = document.getElementById('matrix-round-select');
+      const currentSelectedRound = parseInt(select.value) || 1;
+
+      select.innerHTML = san.rounds.map(r => `
+        <option value="${r.roundNumber}" ${r.roundNumber === currentSelectedRound ? 'selected' : ''}>
+          Ronda ${r.roundNumber} - ${r.recipient}
+        </option>
+      `).join('');
+
+      const activeRoundNumber = parseInt(select.value) || 1;
+      const roundObj = san.rounds.find(r => r.roundNumber === activeRoundNumber) || san.rounds[0];
+      const roundPays = san.payments[activeRoundNumber] || {};
+
+      document.getElementById('matrix-recipient-name').innerText = `${roundObj.recipient} ${roundObj.isOrganizer ? '(Organizador)' : ''}`;
+
+      const paidCount = Object.values(roundPays).filter(p => p.paid).length;
+      document.getElementById('matrix-round-status').innerText = `${paidCount}/${san.members.length} Cuotas Cobradas`;
+
+      const listContainer = document.getElementById('matrix-participants-list');
+      listContainer.innerHTML = san.members.map(member => {
+        const payInfo = roundPays[member] || { paid: false, method: 'Efectivo USD', ref: '' };
+
+        return `
+          <div class="p-2.5 rounded-xl bg-slate-900/80 border ${payInfo.paid ? 'border-emerald-500/30 bg-emerald-950/10' : 'border-slate-800'} flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <button onclick="togglePaymentState(${activeRoundNumber}, '${member}')" class="w-6 h-6 rounded-lg flex items-center justify-center transition flex-shrink-0 ${payInfo.paid ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500 border border-slate-700'}">
+                <i data-lucide="${payInfo.paid ? 'check' : 'circle'}" class="w-4 h-4 stroke-[3]"></i>
+              </button>
+              <div>
+                <span class="text-xs font-bold ${payInfo.paid ? 'text-white' : 'text-slate-400'}">${member}</span>
+                <div class="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                  ${payInfo.paid ? `<span class="text-emerald-400 font-semibold flex items-center gap-1"><i data-lucide="check-circle-2" class="w-3 h-3"></i> Pagado • ${payInfo.method}</span>` : '<span class="text-amber-400/80">Pendiente por pagar</span>'}
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 self-end sm:self-auto">
+              <!-- Selector de Método de Pago -->
+              <select onchange="updatePaymentMethod(${activeRoundNumber}, '${member}', this.value)" class="bg-slate-950 border border-slate-800 text-[10px] rounded-lg px-2 py-1 text-slate-300 font-semibold focus:outline-none focus:border-emerald-500">
+                <option value="Efectivo USD" ${payInfo.method === 'Efectivo USD' ? 'selected' : ''}>💵 Efectivo USD ($)</option>
+                <option value="Pago Móvil" ${payInfo.method === 'Pago Móvil' ? 'selected' : ''}>📱 Pago Móvil</option>
+                <option value="Transferencia" ${payInfo.method === 'Transferencia' ? 'selected' : ''}>🏦 Transferencia</option>
+                <option value="Binance / Crypto" ${payInfo.method === 'Binance / Crypto' ? 'selected' : ''}>🪙 Binance / Crypto</option>
+              </select>
+
+              <!-- Referencia o Nota -->
+              <input type="text" placeholder="${payInfo.method === 'Efectivo USD' ? 'Nota / Billete' : 'N° Ref'}" value="${payInfo.ref || ''}" onchange="updatePaymentRef(${activeRoundNumber}, '${member}', this.value)" class="w-24 bg-slate-950 border border-slate-800 text-[10px] rounded-lg px-2 py-1 text-slate-300 text-right focus:outline-none focus:border-emerald-500">
+            </div>
+          </div>
+        `;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    function togglePaymentState(roundNumber, memberName) {
+      const san = getActiveSan();
+      if (!san) return;
+      san.payments[roundNumber][memberName].paid = !san.payments[roundNumber][memberName].paid;
+      saveAppState();
+    }
+
+    function updatePaymentMethod(roundNumber, memberName, methodValue) {
+      const san = getActiveSan();
+      if (!san) return;
+      san.payments[roundNumber][memberName].method = methodValue;
+      saveAppState();
+    }
+
+    function updatePaymentRef(roundNumber, memberName, refValue) {
+      const san = getActiveSan();
+      if (!san) return;
+      san.payments[roundNumber][memberName].ref = refValue;
+      saveAppState();
+    }
+
+    function renderRaffleTab(san) {
+      const container = document.getElementById('raffle-turn-list');
+      container.innerHTML = san.turns.map(t => `
+        <div class="p-2.5 rounded-xl ${t.isOrganizer ? 'bg-amber-950/20 border border-amber-500/30' : 'bg-slate-900 border border-slate-800'} flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-7 h-7 rounded-lg ${t.isOrganizer ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-300 font-bold'} text-xs flex items-center justify-center">
+              #${t.turn}
+            </div>
+            <span class="text-xs font-bold ${t.isOrganizer ? 'text-amber-300' : 'text-slate-200'}">${t.name}</span>
+          </div>
+          ${t.isOrganizer ? '<span class="text-[10px] font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800/50">Turno Garantizado</span>' : `<span class="text-[10px] text-slate-500">Ronda ${t.turn}</span>`}
+        </div>
+      `).join('');
+    }
+
+    function runRaffleAnimation() {
+      const san = getActiveSan();
+      if (!san) return;
+
+      const btn = document.getElementById('btn-run-raffle');
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Mezclando Puestos...`;
+      lucide.createIcons();
+
+      const nonOrganizerMembers = san.members.filter(m => m !== san.organizerName);
+      let iterations = 0;
+
+      const interval = setInterval(() => {
+        const shuffled = [...nonOrganizerMembers];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        san.turns = [
+          { turn: 1, name: san.organizerName, isOrganizer: true },
+          ...shuffled.map((name, idx) => ({ turn: idx + 2, name, isOrganizer: false }))
+        ];
+
+        renderRaffleTab(san);
+        iterations++;
+
+        if (iterations >= 20) {
+          clearInterval(interval);
+          initSanRounds(san);
+          saveAppState();
+          btn.disabled = false;
+          btn.innerHTML = `<i data-lucide="sparkles" class="w-4 h-4"></i> Iniciar Sorteo (Puestos 2+)`;
+          lucide.createIcons();
+          confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 } });
+        }
+      }, 100);
+    }
+
+    function switchTab(tabName) {
+      ['rounds', 'matrix', 'raffle'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add('hidden');
+        const btn = document.getElementById(`tab-btn-${t}`);
+        btn.classList.remove('bg-emerald-500', 'text-slate-950', 'shadow');
+        btn.classList.add('text-slate-400');
+      });
+
+      document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+      activeBtn.classList.add('bg-emerald-500', 'text-slate-950', 'shadow');
+      activeBtn.classList.remove('text-slate-400');
+    }
+
+    function openNewSanModal() {
+      document.getElementById('modal-new-san').classList.remove('hidden');
+      renderMemberInputs(10);
+    }
+
+    function closeNewSanModal() {
+      document.getElementById('modal-new-san').classList.add('hidden');
+    }
+
+    function renderMemberInputs(count) {
+      const container = document.getElementById('members-inputs-container');
+      const total = parseInt(count) || 2;
+      const numMembersExceptOrg = Math.max(1, total - 1);
+
+      let html = '';
+      for (let i = 1; i <= numMembersExceptOrg; i++) {
+        html += `<input type="text" placeholder="Integrante #${i + 1}" required class="member-input-item w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">`;
+      }
+      container.innerHTML = html;
+    }
+
+    function handleCreateSan(e) {
+      e.preventDefault();
+      const name = document.getElementById('input-san-name').value;
+      const quota = parseFloat(document.getElementById('input-san-quota').value);
+      const frequency = document.getElementById('input-san-frequency').value;
+      const startDate = document.getElementById('input-san-start-date').value;
+      const organizerName = document.getElementById('input-organizer-name').value;
+
+      const memberInputs = document.querySelectorAll('.member-input-item');
+      const otherMembers = Array.from(memberInputs).map(i => i.value.trim()).filter(v => v !== '');
+
+      const newSan = {
+        id: 'san_' + Date.now(),
+        name,
+        quota,
+        frequency,
+        startDate,
+        organizerName,
+        members: [organizerName, ...otherMembers],
+        turns: [
+          { turn: 1, name: organizerName, isOrganizer: true },
+          ...otherMembers.map((m, idx) => ({ turn: idx + 2, name: m, isOrganizer: false }))
+        ],
+        rounds: [],
+        payments: {}
+      };
+
+      initSanRounds(newSan);
+      appState.sanes.unshift(newSan);
+      appState.activeSanId = newSan.id;
+      saveAppState();
+      closeNewSanModal();
+    }
+
+    function confirmDeleteCurrentSan() {
+      const activeSan = getActiveSan();
+      if (activeSan) openDeleteModal(activeSan.id, activeSan.name);
+    }
+
+    function openDeleteModal(sanId, sanName) {
+      sanIdToDelete = sanId;
+      document.getElementById('delete-san-target-name').innerText = sanName;
+      document.getElementById('modal-delete-confirm').classList.remove('hidden');
+    }
+
+    function closeDeleteModal() {
+      sanIdToDelete = null;
+      document.getElementById('modal-delete-confirm').classList.add('hidden');
+    }
+
+    function executeSanDeletion() {
+      if (!sanIdToDelete) return;
+      appState.sanes = appState.sanes.filter(s => s.id !== sanIdToDelete);
+      if (appState.activeSanId === sanIdToDelete) {
+        appState.activeSanId = appState.sanes.length > 0 ? appState.sanes[0].id : null;
+      }
+      saveAppState();
+      closeDeleteModal();
+      closeSanListModal();
+    }
+
+    function openSanListModal() {
+      const container = document.getElementById('san-management-list');
+      container.innerHTML = appState.sanes.map(s => `
+        <div class="p-3 rounded-xl border ${s.id === appState.activeSanId ? 'border-emerald-500 bg-emerald-950/20' : 'border-slate-800 bg-slate-900'} flex items-center justify-between">
+          <div>
+            <h4 class="text-xs font-bold text-white">${s.name}</h4>
+            <p class="text-[10px] text-slate-400 mt-0.5">${s.members.length} Miembros • Cuota $${s.quota}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            ${s.id !== appState.activeSanId ? `<button onclick="setActiveSan('${s.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-bold text-[10px]">Seleccionar</button>` : '<span class="text-[10px] text-emerald-400 font-bold px-2 py-0.5 bg-emerald-500/20 rounded">Activo</span>'}
+            <button onclick="openDeleteModal('${s.id}', '${s.name}')" class="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+          </div>
+        </div>
+      `).join('');
+      document.getElementById('modal-san-list').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeSanListModal() {
+      document.getElementById('modal-san-list').classList.add('hidden');
+    }
+
+    function setActiveSan(sanId) {
+      appState.activeSanId = sanId;
+      saveAppState();
+      closeSanListModal();
+    }
+
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      document.getElementById('pwa-install-banner').classList.remove('hidden');
+    });
+
+    function installPWA() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            document.getElementById('pwa-install-banner').classList.add('hidden');
+          }
+          deferredPrompt = null;
+        });
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadAppState();
+      renderApp();
+      document.getElementById('input-san-start-date').value = new Date().toISOString().split('T')[0];
+    });
+  </script>
+</body>
+</html>
